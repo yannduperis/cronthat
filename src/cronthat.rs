@@ -7,6 +7,8 @@ use run_script::ScriptOptions;
 use std::str::FromStr;
 use std::thread::sleep;
 
+static DATETIME_FORMAT: &'static str = "%Y-%m-%d %H:%M:%S";
+
 /// Schedule commands for execution in an interactive shell with cron expressions. It will keep
 /// executing the provided command until interrupted or until specified conditions are met.
 #[derive(Parser)]
@@ -33,8 +35,7 @@ pub struct CronThat {
 }
 
 fn parse_date_time(value: &str) -> Result<DateTime<Local>> {
-    let format = "%Y-%m-%d %H:%M:%S";
-    let dt = NaiveDateTime::parse_from_str(value, format)?
+    let dt = NaiveDateTime::parse_from_str(value, DATETIME_FORMAT)?
         .and_local_timezone(Local::now().timezone())
         .single()
         .context("cannot parse with timezone")?;
@@ -70,6 +71,7 @@ impl CronThat {
                     bail!("command exited with non-zero status code");
                 } else {
                     println!("warning: command exited with non-zero status code");
+                    println!();
                 }
             }
         }
@@ -82,7 +84,6 @@ impl CronThat {
         let mut options = ScriptOptions::new();
         options.output_redirection = IoOptions::Inherit;
         let (status, _, _) = run_script::run(self.command.join(" ").as_str(), &vec![], &options)?;
-        println!();
         Ok(status == 0)
     }
 
@@ -113,10 +114,12 @@ impl CronThat {
 
 #[cfg(test)]
 mod tests {
-    use crate::cronthat::CronThat;
+    use crate::cronthat::{CronThat, DATETIME_FORMAT};
     use clap::Parser;
     use std::fs::File;
     use std::io;
+    use std::ops::Add;
+    use chrono::{Local, TimeDelta};
     use tokio::task::spawn_blocking;
     use tokio::time::timeout;
 
@@ -131,7 +134,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cronthat_execute() {
+    async fn cronthat_execute_limited_repetitions() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let tmp_path = tmp.path().to_path_buf();
 
@@ -159,5 +162,86 @@ mod tests {
 
         let content = io::read_to_string(File::open(tmp_path).unwrap()).unwrap();
         assert_eq!(content, "helloworld\nhelloworld\n");
+    }
+
+    #[tokio::test]
+    async fn cronthat_execute_until() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp_path = tmp.path().to_path_buf();
+
+        let now = Local::now();
+        let in_three_seconds = now.add(TimeDelta::seconds(3));
+        let until = in_three_seconds.format(DATETIME_FORMAT).to_string();
+
+        let timeout_duration = tokio::time::Duration::from_secs(3);
+        timeout(timeout_duration, async {
+            let tmp_path = tmp_path.clone();
+            spawn_blocking(move || {
+                let tmp_path = tmp_path.clone();
+                let cli = CronThat::try_parse_from(vec![
+                    "cronthat",
+                    CRON_EVERY_S,
+                    "--until",
+                    until.as_str(),
+                    "--",
+                    &format!("echo helloworld >> {:?}", tmp_path),
+                ])
+                    .unwrap();
+                cli.execute().unwrap();
+            })
+                .await
+                .unwrap();
+        })
+            .await
+            .expect("timed out");
+
+        let content = io::read_to_string(File::open(tmp_path).unwrap()).unwrap();
+        assert_eq!(content, "helloworld\nhelloworld\nhelloworld\n");
+    }
+
+    #[tokio::test]
+    async fn cronthat_execute_error() {
+        let timeout_duration = tokio::time::Duration::from_secs(2);
+
+        // Default to ignore errors
+        timeout(timeout_duration.clone(), async {
+            spawn_blocking(move || {
+                let cli = CronThat::try_parse_from(vec![
+                    "cronthat",
+                    CRON_EVERY_S,
+                    "--repetitions",
+                    "2",
+                    "--",
+                    "exit",
+                    "1",
+                ])
+                .unwrap();
+                cli.execute().unwrap();
+            })
+            .await
+            .unwrap();
+        })
+        .await
+        .expect("timed out");
+
+        // Stop on errors
+        timeout(timeout_duration.clone(), async {
+            spawn_blocking(move || {
+                let cli = CronThat::try_parse_from(vec![
+                    "cronthat",
+                    CRON_EVERY_S,
+                    "--stop-on-error",
+                    "--",
+                    "exit",
+                    "1",
+                ])
+                .unwrap();
+                cli.execute().expect_err("must stop on error");
+            })
+            .await
+            .unwrap();
+        })
+        .await
+        .expect("timed out");
     }
 }
