@@ -14,7 +14,8 @@ static DATETIME_FORMAT: &'static str = "%Y-%m-%d %H:%M:%S";
 #[derive(Parser)]
 #[command(version, about, author)]
 pub struct CronThat {
-    /// Cron expression to schedule your command, you can use tools like https://crontab.guru/ to help you.
+    /// Cron expression to schedule your command, you can use tools like https://crontab.cronhub.io/ to help you.
+    /// Precision up to the second.
     cron_expression: String,
 
     /// Command to run
