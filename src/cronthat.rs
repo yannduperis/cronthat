@@ -115,11 +115,11 @@ impl CronThat {
 #[cfg(test)]
 mod tests {
     use crate::cronthat::{CronThat, DATETIME_FORMAT};
+    use chrono::{Local, TimeDelta};
     use clap::Parser;
     use std::fs::File;
     use std::io;
     use std::ops::Add;
-    use chrono::{Local, TimeDelta};
     use tokio::task::spawn_blocking;
     use tokio::time::timeout;
 
@@ -186,14 +186,14 @@ mod tests {
                     "--",
                     &format!("echo helloworld >> {:?}", tmp_path),
                 ])
-                    .unwrap();
+                .unwrap();
                 cli.execute().unwrap();
             })
-                .await
-                .unwrap();
-        })
             .await
-            .expect("timed out");
+            .unwrap();
+        })
+        .await
+        .expect("timed out");
 
         let content = io::read_to_string(File::open(tmp_path).unwrap()).unwrap();
         assert_eq!(content, "helloworld\nhelloworld\nhelloworld\n");
