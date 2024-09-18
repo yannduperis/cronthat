@@ -62,4 +62,6 @@ while I manage to get releases and packages (crates.io, AUR and Brew).
 I needed a command to be reliably executed every day (while away from my computer). For such a single-use case, I didn't 
 want the hassle of a cron task, but I wanted that sweet syntax for scheduled execution. Believe it or not, I couldn't
 find a simple tool to start "single-use" cron tasks that I can see live in my terminal and terminate with 
-`CTRL-C. Now there is one.
+`CTRL-C`. 
+
+Now there is one.
