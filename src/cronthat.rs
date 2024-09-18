@@ -33,6 +33,10 @@ pub struct CronThat {
     /// When to stop (mutually exclusive with --repetitions)
     #[clap(short, long, value_parser = parse_date_time)]
     until: Option<DateTime<Local>>,
+
+    /// Schedule a first execution immediately
+    #[clap(short('w'), long)]
+    now: bool,
 }
 
 fn parse_date_time(value: &str) -> Result<DateTime<Local>> {
@@ -48,6 +52,10 @@ impl CronThat {
         self.check_args()?;
         let schedule =
             Schedule::from_str(&self.cron_expression).context("invalid cron expression")?;
+
+        if self.now {
+            self.spawn_command()?;
+        }
 
         for (i, datetime) in schedule
             .upcoming(Local::now().timezone())
@@ -244,5 +252,39 @@ mod tests {
         })
         .await
         .expect("timed out");
+    }
+
+    #[tokio::test]
+    async fn cronthat_execute_now() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp_path = tmp.path().to_path_buf();
+
+        let timeout_duration = tokio::time::Duration::from_millis(1500);
+        let in_one_second = Local::now().add(TimeDelta::seconds(1));
+
+        // Default to ignore errors
+        timeout(timeout_duration.clone(), async {
+            let tmp_path = tmp_path.clone();
+            spawn_blocking(move || {
+                let cli = CronThat::try_parse_from(vec![
+                    "cronthat",
+                    CRON_EVERY_S,
+                    "--now",
+                    "--until",
+                    &in_one_second.format(DATETIME_FORMAT).to_string(),
+                    "--",
+                    &format!("echo helloworld >> {:?}", tmp_path),
+                ])
+                .unwrap();
+                cli.execute().unwrap();
+            })
+            .await
+            .unwrap();
+        })
+        .await
+        .expect("timed out");
+
+        let content = io::read_to_string(File::open(tmp_path).unwrap()).unwrap();
+        assert_eq!(content, "helloworld\nhelloworld\n");
     }
 }
